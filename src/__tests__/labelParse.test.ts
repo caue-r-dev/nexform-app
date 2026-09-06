@@ -55,4 +55,20 @@ describe('matchSkusMulti', () => {
     const result = matchSkusMulti(text, knownSkus)
     expect(result[0].qtd).toBe(3)
   })
+
+  it('SKU só-numérico não casa por acidente dentro do código de barras/rastreio (falso positivo real)', () => {
+    const knownSkusComSemCor: KnownSku[] = [
+      ...knownSkus,
+      { productId: 'p-cobra', corId: null, sku: '1000', productNome: 'Cobra Articulada', corNome: null },
+    ]
+    // Texto real (pdf-parse) da etiqueta página 1 — contém "31260957506967000167550010000032501706009680"
+    // (código de rastreio), que tem "1000" embutido no meio da sequência de dígitos.
+    const text = 'S\nP 395-03 021 Pedido: 999881965272734 2026-09-05 20:23 DESTINATÁRIO\n999881965272734 999881965272734 REMETENTE: Nathali Júlia Jardim América Rua Votuporanga 156, Várzea Paulista, SP, 13221240 N**x Residencial Boa Vista R REVERENDO DAVID ROSE D E CARVALHO 187, Jacutinga, MG, 37590000 31260957506967000167550010000032501706009680 UP3460014242 06/09/2026 20:25:04 1/4\nDECLARAÇÃO DE CONTEÚDO\nCódigo de Rastreamento: 999881965272734\nREMETENTE\nCEP:CPF/CNPJ:NOME: ravora\nDESTINATÁRIO\nCEP: 13221240CPF/CNPJ: 52304811884NOME: Nathali Júlia\nIDENTIFICAÇÃO DOS BENS\nNº SKU DESCRIÇÃO VARIAÇÃO QTD 1 1009.00002\nImagem ReligiosaEscultura Decorativa 20cmNossa Senhora Aparecida Branco\n1\n2\n711013.#A210\n3DTransformável AntiestresseEsfera Sensorial Fidget\nV-SilkChoqueRosa\n1\n06-09-2026 Total\n2'
+
+    const result = matchSkusMulti(text, knownSkusComSemCor)
+
+    expect(result).toHaveLength(2)
+    expect(result.map(r => r.sku.sku)).toEqual(['1009.00002', '1013.#A210'])
+    expect(result.some(r => r.sku.sku === '1000')).toBe(false)
+  })
 })

@@ -77,6 +77,16 @@ export function matchSkusMulti(text: string, knownSkus: KnownSku[]): SkuQtyMatch
       if (idx === -1) break
       from = idx + 1
       const end = idx + needle.length
+      // SKU só-numérico (ex: "1000", produto sem cor) não pode casar como parte de uma
+      // sequência de dígitos maior (código de barras, CEP, CPF, número de rastreio) —
+      // isso gera falso positivo real: "1000" bate dentro de qualquer código de barras
+      // que contenha esses 4 dígitos em sequência. Exige que a ocorrência seja um token
+      // isolado (vizinhos não-dígito ou fim do texto).
+      if (/^\d+$/.test(needle)) {
+        const before = idx > 0 ? normalized[idx - 1] : ''
+        const after = end < normalized.length ? normalized[end] : ''
+        if (/\d/.test(before) || /\d/.test(after)) continue
+      }
       let overlaps = false
       for (let i = idx; i < end; i++) {
         if (claimed[i]) { overlaps = true; break }
