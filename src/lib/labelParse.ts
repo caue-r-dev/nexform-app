@@ -61,6 +61,14 @@ function extractStandaloneQtd(window: string): number | null {
 // TODOS os itens do pedido, não de um item isolado) e pega a primeira linha só-com-
 // dígitos dentro da janela daquele item.
 export function matchSkusMulti(text: string, knownSkus: KnownSku[]): SkuQtyMatch[] {
+  // Restringe a busca à tabela de itens ("IDENTIFICAÇÃO DOS BENS", presente nas
+  // declarações de conteúdo/DANFE simplificado) — antes dela só tem
+  // remetente/destinatário/CEP/CPF/rastreio, cheios de números que colidem por
+  // acidente com SKU só-numérico (ex: nº da casa "1050", CEP quebrado "82").
+  // Sem esse marcador (foto/OCR de outro formato), mantém o texto inteiro.
+  const tableIdx = text.search(/identifica[cç][aã]o dos bens/i)
+  if (tableIdx !== -1) text = text.slice(tableIdx)
+
   const { normalized, origIndex } = buildNormalizedIndex(text)
   const claimed = new Array(normalized.length).fill(false)
 

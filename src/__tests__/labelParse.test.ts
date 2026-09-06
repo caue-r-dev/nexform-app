@@ -71,4 +71,21 @@ describe('matchSkusMulti', () => {
     expect(result.map(r => r.sku.sku)).toEqual(['1009.00002', '1013.#A210'])
     expect(result.some(r => r.sku.sku === '1000')).toBe(false)
   })
+
+  it('não casa SKU só-numérico com nº de endereço nem CEP quebrado antes da tabela de itens', () => {
+    const knownSkusComFaceplate: KnownSku[] = [
+      ...knownSkus,
+      { productId: 'p-faceplate', corId: null, sku: '1050', productNome: 'Faceplate PS5', corNome: null },
+    ]
+    // Texto real (pdf-parse) da etiqueta página 4 — endereço "Ribeiro 1050" (nº da casa)
+    // e CEP "18191482" quebrado em "181914" + "82" pela extração, ambos antes da tabela
+    // de itens ("IDENTIFICAÇÃO DOS BENS"), onde o único produto real é 1013.00003.
+    const text = 'S\nO\nD 352-12 201 Pedido: 999881965942045 2026-09-06 20:20 DESTINATÁRIO\n999881965942045 999881965942045 REMETENTE: Maria Augusta Reis Pereira Setor 6 casa 41, Rio Verde Rua Romeu Antune s Ribeiro 1050, Araçoiaba da Serra, SP, 181914 82N**x Residencial Boa Vista R REVERENDO DAVID ROSE D E CARVALHO 187, Jacutinga, MG, 37590000 31260957506967000167550010000032531764310755 UP3460014245 06/09/2026 20:25:04 4/4\nDECLARAÇÃO DE CONTEÚDO\nCódigo de Rastreamento: 999881965942045\nREMETENTE\nCEP:CPF/CNPJ:NOME: ravora\nDESTINATÁRIO\nCEP: 18191482CPF/CNPJ: 42605930807NOME: Maria Augusta Reis Pereira\nIDENTIFICAÇÃO DOS BENS\nNº SKU DESCRIÇÃO VARIAÇÃO QTD 1 1013.00003\n3DTransformável AntiestresseEsfera Sensorial Fidget Rainbow\n1\n06-09-2026 Total\n1'
+
+    const result = matchSkusMulti(text, knownSkusComFaceplate)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].sku.sku).toBe('1013.00003')
+    expect(result[0].qtd).toBe(1)
+  })
 })
