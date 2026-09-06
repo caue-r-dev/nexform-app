@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { createEtiqueta, deleteEtiqueta } from '@/app/actions/etiquetas'
-import { matchSku, parseQtd, type KnownSku } from '@/lib/labelParse'
+import { matchSkusMulti, parseQtd, type KnownSku } from '@/lib/labelParse'
 
 type Etiqueta = {
   id: string
@@ -40,6 +40,26 @@ type QueueItem = {
 const fmtDT = (s: string) => new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 const fmtBRL = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const uid = () => Math.random().toString(36).slice(2)
+
+type ParsedItem = { productId: string; corId: string | null; qtd: number; matched: boolean }
+
+// Um texto de etiqueta/DANFE pode conter mais de um produto (pedido com itens
+// diferentes) — retorna 1 item por SKU identificado, cada um com sua própria
+// quantidade. Sem nenhum SKU reconhecido, cai pra 1 item vazio (seleção manual),
+// ainda tentando aproveitar a quantidade lida no texto.
+function itemsFromText(text: string, knownSkus: KnownSku[]): ParsedItem[] {
+  const matches = matchSkusMulti(text, knownSkus)
+  if (matches.length === 0) {
+    const qtd = parseQtd(text)
+    return [{ productId: '', corId: null, qtd: qtd && qtd > 0 ? qtd : 1, matched: false }]
+  }
+  return matches.map(m => ({
+    productId: m.sku.productId,
+    corId: m.sku.corId,
+    qtd: m.qtd > 0 ? m.qtd : 1,
+    matched: true,
+  }))
+}
 
 export default function EtiquetasResellerView({ etiquetas, knownSkus, products, saldoDisponivel }: {
   etiquetas: Etiqueta[]
@@ -101,42 +121,27 @@ export default function EtiquetasResellerView({ etiquetas, knownSkus, products, 
         const pageTexts: string[] = json.pageTexts ?? []
         const totalPages = pageTexts.length || 1
 
-        if (totalPages > 1) {
-          setQueue(q => {
-            const base = q.find(it => it.localId === localId)
-            if (!base) return q
-            const expanded: QueueItem[] = pageTexts.map((text, idx) => {
-              const match = matchSku(text, knownSkus)
-              const qtd = parseQtd(text)
-              return {
-                ...base,
-                localId: uid(),
-                storagePath: json.path,
-                productId: match?.productId ?? '',
-                corId: match?.corId ?? null,
-                qtd: qtd && qtd > 0 ? qtd : 1,
-                matched: !!match,
-                status: 'pronto',
-                page: idx + 1,
-                totalPages,
-              }
-            })
-            return q.flatMap(it => it.localId === localId ? expanded : [it])
-          })
-          return
-        }
-
-        const text = pageTexts[0] ?? ''
-        const match = matchSku(text, knownSkus)
-        const qtd = parseQtd(text)
-        updateItem(localId, {
-          storagePath: json.path,
-          productId: match?.productId ?? '',
-          corId: match?.corId ?? null,
-          qtd: qtd && qtd > 0 ? qtd : 1,
-          matched: !!match,
-          status: 'pronto',
-          totalPages: 1,
+        // Cada página pode listar mais de um produto (pedido com itens diferentes na
+        // mesma etiqueta) — expande pra 1 QueueItem por item identificado, não por
+        // página. Itens da mesma página compartilham o mesmo número de página.
+        setQueue(q => {
+          const base = q.find(it => it.localId === localId)
+          if (!base) return q
+          const expanded: QueueItem[] = pageTexts.flatMap((text, idx) =>
+            itemsFromText(text, knownSkus).map(p => ({
+              ...base,
+              localId: uid(),
+              storagePath: json.path,
+              productId: p.productId,
+              corId: p.corId,
+              qtd: p.qtd,
+              matched: p.matched,
+              status: 'pronto' as const,
+              page: idx + 1,
+              totalPages,
+            }))
+          )
+          return q.flatMap(it => it.localId === localId ? expanded : [it])
         })
         return
       }
@@ -146,16 +151,21 @@ export default function EtiquetasResellerView({ etiquetas, knownSkus, products, 
       const { data } = await worker.recognize(file)
       await worker.terminate()
       const text = data.text
-      const qtd = parseQtd(text)
-      const match = matchSku(text, knownSkus)
 
-      updateItem(localId, {
-        storagePath: json.path,
-        productId: match?.productId ?? '',
-        corId: match?.corId ?? null,
-        qtd: qtd && qtd > 0 ? qtd : 1,
-        matched: !!match,
-        status: 'pronto',
+      setQueue(q => {
+        const base = q.find(it => it.localId === localId)
+        if (!base) return q
+        const expanded: QueueItem[] = itemsFromText(text, knownSkus).map(p => ({
+          ...base,
+          localId: uid(),
+          storagePath: json.path,
+          productId: p.productId,
+          corId: p.corId,
+          qtd: p.qtd,
+          matched: p.matched,
+          status: 'pronto' as const,
+        }))
+        return q.flatMap(it => it.localId === localId ? expanded : [it])
       })
     } catch {
       updateItem(localId, { status: 'erro', error: 'Falha ao processar arquivo.' })
