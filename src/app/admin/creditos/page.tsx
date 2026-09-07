@@ -12,7 +12,7 @@ export default async function AdminCreditosPage() {
   const rows = await fetchAllRows((from, to) =>
     adminClient
       .from('credit_transactions')
-      .select('id, tipo, valor, status, valor_ocr_lido, storage_path, criado_em, reseller_id, resellers(nome)')
+      .select('id, tipo, valor, status, valor_ocr_lido, storage_path, observacao, criado_em, reseller_id, resellers(nome)')
       .order('criado_em', { ascending: false })
       .range(from, to)
   )
@@ -27,6 +27,13 @@ export default async function AdminCreditosPage() {
     })
   )
 
+  // Lista completa de revendedores (não só quem já tem depósito) — o form
+  // de recarga manual precisa poder lançar pra revendedor sem histórico.
+  const { data: resellers } = await adminClient
+    .from('resellers')
+    .select('id, nome')
+    .order('nome')
+
   return (
     <div className="theme-kreatop" style={{ flex: 1, padding: 24 }}>
       <div className="page-head">
@@ -35,7 +42,7 @@ export default async function AdminCreditosPage() {
           <p>Depósitos dos revendedores — aprove ou rejeite os que caíram em revisão</p>
         </div>
       </div>
-      <CreditosAdminView transacoes={withUrls} />
+      <CreditosAdminView transacoes={withUrls} resellers={resellers ?? []} />
     </div>
   )
 }
