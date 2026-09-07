@@ -184,3 +184,25 @@ export async function rejeitarDeposito(id: string) {
   revalidatePath('/reseller/creditos')
   return { ok: true as const }
 }
+
+export async function lancarRecargaManual(resellerId: string, valor: number, observacao?: string) {
+  if (!(await currentIsAdmin())) return { error: 'Acesso negado.' }
+  if (!resellerId) return { error: 'Selecione um revendedor.' }
+  if (!valor || !Number.isFinite(valor) || valor <= 0) return { error: 'Valor inválido.' }
+  valor = Math.round(valor * 100) / 100
+
+  const { error } = await adminClient.from('credit_transactions').insert({
+    reseller_id: resellerId,
+    tipo: 'deposito',
+    status: 'confirmado',
+    valor,
+    observacao: observacao?.trim() || null,
+    confirmado_em: new Date().toISOString(),
+  })
+  if (error) return { error: error.message }
+
+  revalidatePath('/admin/creditos')
+  revalidatePath('/reseller/creditos')
+  revalidatePath('/reseller')
+  return { ok: true as const }
+}
