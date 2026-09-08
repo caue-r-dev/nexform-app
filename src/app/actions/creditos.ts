@@ -120,13 +120,21 @@ export async function enviarComprovante(transactionId: string, storagePath: stri
     } else {
       try {
         const path = await import('path')
-        const { createWorker } = await import('tesseract.js')
+        const { createWorker, PSM } = await import('tesseract.js')
         // tesseract.js resolve o worker-script via __dirname, que o bundler
         // do Next.js (server action) reescreve pra um caminho que não existe
         // em disco — passa o path real (relativo a process.cwd(), que continua
         // correto em runtime) explicitamente pra não depender disso.
         const workerPath = path.join(process.cwd(), 'node_modules/tesseract.js/src/worker-script/node/index.js')
         const worker = await createWorker('por', 1, { workerPath })
+        // Sem isto, o mesmo PSM.AUTO (que já é o default nominal) às vezes deixa
+        // passar em branco justo a linha do valor em prints de app bancário
+        // (fonte grande, isolada, topo da imagem) — confirmado reproduzível
+        // testando localmente com um comprovante real que falhava sempre sem
+        // isto e sempre lia certo com isto. Setar explicitamente força o
+        // tesseract a re-analisar o layout da página em vez de usar o cache
+        // de segmentação da inicialização do worker.
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO })
         const { data } = await worker.recognize(bytes)
         await worker.terminate()
         text = data.text

@@ -36,6 +36,15 @@ describe('parseValorPago', () => {
   it('ainda trata ponto como milhar quando tem 3 dígitos e vírgula decimal', () => {
     expect(parseValorPago('Valor: R$ 1.234,56')).toBe(1234.56)
   })
+
+  it('lê "R$11,82" colado, sem espaço (OCR real de print de app bancário)', () => {
+    // Texto real (tesseract.js, PSM.AUTO explícito) de um print de extrato — sem esse
+    // parâmetro explícito o tesseract às vezes deixava a linha do valor inteira de fora
+    // do texto lido (bug separado, corrigido em enviarComprovante), fazendo o comprovante
+    // cair sempre em revisão manual mesmo com o valor certo.
+    const text = '- R$11,82 [ conctuída\n\nO Pagamento Pix\nO 08/09/2026 às 15:14\nORIGEM\n\nNome\n\nCaue Ribeiro dos Santos'
+    expect(parseValorPago(text)).toBe(11.82)
+  })
 })
 
 describe('parseDataHoraPagamento', () => {
@@ -58,6 +67,15 @@ describe('parseDataHoraPagamento', () => {
 
   it('retorna null quando não acha data/hora no texto', () => {
     expect(parseDataHoraPagamento('Comprovante sem nenhuma data')).toBeNull()
+  })
+
+  it('lê data/hora de print de app bancário (texto OCR real)', () => {
+    const d = parseDataHoraPagamento('O Pagamento Pix\n\nO 08/09/2026 às 15:14\nORIGEM')
+    expect(d).not.toBeNull()
+    expect(d!.getDate()).toBe(8)
+    expect(d!.getMonth()).toBe(8)
+    expect(d!.getHours()).toBe(15)
+    expect(d!.getMinutes()).toBe(14)
   })
 })
 
