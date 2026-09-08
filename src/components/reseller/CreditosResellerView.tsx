@@ -122,7 +122,49 @@ function NovoDepositoForm({ saldoDisponivel }: { saldoDisponivel: number }) {
   )
 }
 
+// Reenvio de comprovante pra um depósito "pendente" já existente (Pix gerado numa sessão
+// anterior — a tela de "Novo depósito" só oferece o upload enquanto o state local `pending`
+// existe, que se perde ao recarregar a página; sem isto, um depósito pendente sobrevivente
+// no histórico do servidor ficava sem nenhuma forma de anexar comprovante).
+function ReenviarComprovante({ depositoId, onEnviado }: { depositoId: string; onEnviado: (status: 'confirmado' | 'revisao') => void }) {
+  const [enviando, setEnviando] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setEnviando(true); setErr('')
+
+    const fd = new FormData()
+    fd.append('file', file)
+    const uploadRes = await fetch('/api/creditos/upload', { method: 'POST', body: fd })
+    const uploadJson = await uploadRes.json()
+    if (!uploadRes.ok || uploadJson.error) {
+      setErr(uploadJson.error ?? 'Erro no upload.'); setEnviando(false); return
+    }
+
+    const res = await enviarComprovante(depositoId, uploadJson.path)
+    setEnviando(false)
+    if ('error' in res) { setErr(res.error ?? ''); return }
+    onEnviado(res.status)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+      <label className="btn btn-sm btn-ghost" style={{ cursor: enviando ? 'default' : 'pointer', margin: 0 }}>
+        {enviando ? 'Lendo…' : 'Enviar comprovante'}
+        <input
+          type="file" accept="image/*,application/pdf" onChange={handleFile} disabled={enviando}
+          style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden' }}
+        />
+      </label>
+      {err && <span style={{ color: 'var(--red)', fontWeight: 700, fontSize: 11.5 }}>{err}</span>}
+    </div>
+  )
+}
+
 export default function CreditosResellerView({ saldoDisponivel, depositos }: { saldoDisponivel: number; depositos: Deposito[] }) {
+  const router = useRouter()
   return (
     <>
       <div className="card" style={{ marginBottom: 22, padding: 18 }}>
@@ -142,12 +184,13 @@ export default function CreditosResellerView({ saldoDisponivel, depositos }: { s
                 <th>Valor</th>
                 <th>Status</th>
                 <th>Data</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {depositos.length === 0 && (
                 <tr className="empty-row">
-                  <td colSpan={3}><span className="ast">✳</span>Nenhum depósito ainda.</td>
+                  <td colSpan={4}><span className="ast">✳</span>Nenhum depósito ainda.</td>
                 </tr>
               )}
               {depositos.map(d => (
@@ -155,6 +198,11 @@ export default function CreditosResellerView({ saldoDisponivel, depositos }: { s
                   <td className="mono" style={{ fontWeight: 800 }}>{fmtBRL(d.valor)}</td>
                   <td>{statusTag(d.status)}</td>
                   <td style={{ fontSize: 12 }}>{fmtDT(d.criado_em)}</td>
+                  <td>
+                    {d.status === 'pendente' && (
+                      <ReenviarComprovante depositoId={d.id} onEnviado={() => router.refresh()} />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
