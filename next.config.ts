@@ -17,10 +17,18 @@ const nextConfig: NextConfig = {
     // src/worker-script/node/getCore.js -> tesseract.js-core/*) nunca era incluído no
     // bundle serverless, derrubando a function com "Cannot find module '..'" só em
     // produção (funciona local pq o node_modules inteiro tá em disco).
+    // tesseract.js/**/* só cobre o próprio pacote — o worker script ainda faz require()
+    // bare-specifier de pacotes irmãos (bmp-js, node-fetch, is-url), fora do node_modules
+    // de tesseract.js e por isso fora do glob acima. Lista completa levantada com
+    // `grep -r "require('...')" node_modules/tesseract.js/src` filtrando os módulos
+    // realmente alcançáveis pelo caminho de execução em Node (não browser/*).
     '/reseller/creditos': [
       './node_modules/tesseract.js/**/*',
       './node_modules/tesseract.js-core/**/*',
       './node_modules/wasm-feature-detect/**/*',
+      './node_modules/bmp-js/**/*',
+      './node_modules/node-fetch/**/*',
+      './node_modules/is-url/**/*',
     ],
   },
 };
