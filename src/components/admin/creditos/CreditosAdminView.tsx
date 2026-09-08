@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { aprovarDeposito, rejeitarDeposito } from '@/app/actions/creditos'
+import { aprovarDeposito, rejeitarDeposito, lancarRecargaManual } from '@/app/actions/creditos'
 import { downloadCSV } from '@/lib/downloadCSV'
 
 type Transacao = {
@@ -11,11 +11,14 @@ type Transacao = {
   status: 'pendente' | 'confirmado' | 'revisao' | 'rejeitado'
   valor_ocr_lido: number | null
   storage_path: string | null
+  observacao: string | null
   criado_em: string
   reseller_id: string
   resellers: { nome: string } | { nome: string }[] | null
   signedUrl: string | null
 }
+
+type Reseller = { id: string; nome: string }
 
 const fmtBRL = (n: number) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDT = (s: string) => new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
@@ -32,9 +35,13 @@ function statusTag(status: Transacao['status']) {
   return <span className="tag tag-muted">Pendente</span>
 }
 
-export default function CreditosAdminView({ transacoes }: { transacoes: Transacao[] }) {
+export default function CreditosAdminView({ transacoes, resellers }: { transacoes: Transacao[]; resellers: Reseller[] }) {
   const [filtro, setFiltro] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  const [recargaResellerId, setRecargaResellerId] = useState('')
+  const [recargaValor, setRecargaValor] = useState('')
+  const [recargaObs, setRecargaObs] = useState('')
+  const [recargaBusy, setRecargaBusy] = useState(false)
 
   const depositos = useMemo(() => transacoes.filter(t => t.tipo === 'deposito'), [transacoes])
   const emRevisao = depositos.filter(d => d.status === 'revisao')
@@ -81,6 +88,17 @@ export default function CreditosAdminView({ transacoes }: { transacoes: Transaca
     if (res.error) alert(res.error)
   }
 
+  async function handleLancarRecarga() {
+    const valor = Number(recargaValor.replace(',', '.'))
+    setRecargaBusy(true)
+    const res = await lancarRecargaManual(recargaResellerId, valor, recargaObs)
+    setRecargaBusy(false)
+    if (res.error) { alert(res.error); return }
+    setRecargaResellerId('')
+    setRecargaValor('')
+    setRecargaObs('')
+  }
+
   function handleExportar() {
     const rows: string[][] = [['Revendedor', 'Valor', 'Status', 'Data', 'Comprovante']]
     for (const d of filtrados) {
@@ -91,6 +109,47 @@ export default function CreditosAdminView({ transacoes }: { transacoes: Transaca
 
   return (
     <>
+      <div style={{ marginBottom: 22 }}>
+        <div className="section-head"><h3>Lançar recarga manual</h3></div>
+        <div className="card" style={{ padding: '16px 18px' }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="field" style={{ minWidth: 220 }}>
+              <label>Revendedor</label>
+              <select value={recargaResellerId} onChange={e => setRecargaResellerId(e.target.value)}>
+                <option value="">Selecione...</option>
+                {resellers.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{ maxWidth: 160 }}>
+              <label>Valor</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="0,00"
+                value={recargaValor}
+                onChange={e => setRecargaValor(e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ flex: 1, minWidth: 220 }}>
+              <label>Observação (opcional)</label>
+              <input
+                type="text"
+                placeholder="Ex: comprovante recebido por WhatsApp"
+                value={recargaObs}
+                onChange={e => setRecargaObs(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={handleLancarRecarga}
+              disabled={recargaBusy || !recargaResellerId || !recargaValor}
+              className="btn btn-sm btn-primary"
+            >
+              Confirmar recarga
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div style={{ marginBottom: 22 }}>
         <div className="section-head"><h3>Saldo por revendedor</h3></div>
         <div className="card">
@@ -187,7 +246,9 @@ export default function CreditosAdminView({ transacoes }: { transacoes: Transaca
                   <td>
                     {d.signedUrl
                       ? <a href={d.signedUrl} target="_blank" rel="noreferrer">Ver ↗</a>
-                      : <span style={{ color: 'var(--soft)' }}>—</span>
+                      : d.status === 'confirmado' && !d.storage_path
+                        ? <span title={d.observacao ?? undefined} style={{ color: 'var(--soft)' }}>Lançamento manual</span>
+                        : <span style={{ color: 'var(--soft)' }}>—</span>
                     }
                   </td>
                   <td style={{ fontSize: 12 }}>{fmtDT(d.criado_em)}</td>
