@@ -16,6 +16,8 @@ type Etiqueta = {
   signedUrl: string | null
   productImagem: string | null
   upload_batch_id: string | null
+  kit_sku: string | null
+  kit_nome: string | null
   resellers: { nome: string }[] | { nome: string } | null
 }
 
@@ -100,7 +102,7 @@ export default function EtiquetasAdminView({ etiquetas }: { etiquetas: Etiqueta[
           <div className="card" style={{ padding: 24, maxWidth: 560, width: '90vw', maxHeight: '90vh', overflow: 'auto' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 900 }}>{viewing.reseller} · {viewing.items.length} item{viewing.items.length !== 1 ? 's' : ''}</h2>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 900 }}>{viewing.reseller} · {viewing.items.length} {viewing.items.length === 1 ? 'item' : 'itens'}</h2>
               <button onClick={() => setViewing(null)} className="btn btn-sm btn-ghost">Fechar</button>
             </div>
             {viewing.signedUrl && (
@@ -176,7 +178,7 @@ export default function EtiquetasAdminView({ etiquetas }: { etiquetas: Etiqueta[
                     {b.reseller}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--soft)', fontWeight: 700 }}>
-                    {fmtDT(b.dataUpload)} · {b.items.length} item{b.items.length !== 1 ? 's' : ''}
+                    {fmtDT(b.dataUpload)} · {b.items.length} {b.items.length === 1 ? 'item' : 'itens'}
                   </div>
                 </div>
                 {b.status === 'pendente'
@@ -191,7 +193,7 @@ export default function EtiquetasAdminView({ etiquetas }: { etiquetas: Etiqueta[
                   className="btn btn-sm btn-ghost"
                   style={{ fontSize: 11 }}
                 >
-                  {b.items.length} item{b.items.length !== 1 ? 's' : ''} {isExpanded ? '▲' : '▼'}
+                  {b.items.length} {b.items.length === 1 ? 'item' : 'itens'} {isExpanded ? '▲' : '▼'}
                 </button>
                 {b.status === 'pendente' && (
                   <button
@@ -207,10 +209,27 @@ export default function EtiquetasAdminView({ etiquetas }: { etiquetas: Etiqueta[
 
               {isExpanded && (
                 <div style={{ borderTop: '1px solid var(--line)', background: 'var(--card2)' }}>
-                  {b.items.map(item => (
-                    <div key={item.id} style={{
+                  {b.items.map((item, idx) => {
+                    // Itens de um mesmo kit ficam consecutivos (a fila do revendedor expande
+                    // 1 SKU de kit em N itens, na ordem) — mostra 1 aviso antes do primeiro
+                    // item de cada grupo pra quem separa o pedido não mandar o mesmo produto
+                    // 2x achando que são vendas avulsas distintas.
+                    const isFirstOfKit = item.kit_sku && item.kit_sku !== b.items[idx - 1]?.kit_sku
+                    return (
+                    <div key={item.id}>
+                      {isFirstOfKit && (
+                        <div style={{
+                          padding: '6px 14px', fontSize: 10.5, fontWeight: 800,
+                          color: 'var(--amber)', background: 'var(--amber-bg, rgba(217,119,6,.12))',
+                          borderBottom: '1px solid var(--line)',
+                        }}>
+                          🎁 Kit: {item.kit_nome} — itens abaixo são do mesmo pedido, não separe como vendas distintas
+                        </div>
+                      )}
+                    <div style={{
                       display: 'flex', gap: 8, alignItems: 'center', padding: '8px 14px',
                       borderBottom: '1px solid var(--line)',
+                      borderLeft: item.kit_sku ? '3px solid var(--amber)' : undefined,
                     }}>
                       {item.productImagem
                         ? <img src={item.productImagem} alt={item.sku} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)', flexShrink: 0 }} />
@@ -242,7 +261,9 @@ export default function EtiquetasAdminView({ etiquetas }: { etiquetas: Etiqueta[
                         <span className="tag" style={{ fontSize: 10 }}>Impressa</span>
                       )}
                     </div>
-                  ))}
+                    </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

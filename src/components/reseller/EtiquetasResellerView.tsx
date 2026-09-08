@@ -35,13 +35,21 @@ type QueueItem = {
   page: number | null
   totalPages: number | null
   uploadBatchId: string
+  kitSku: string | null
+  kitNome: string | null
 }
 
 const fmtDT = (s: string) => new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 const fmtBRL = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const uid = () => Math.random().toString(36).slice(2)
 
-type ParsedItem = { productId: string; corId: string | null; qtd: number; matched: boolean }
+type ParsedItem = {
+  productId: string; corId: string | null; qtd: number; matched: boolean
+  // Preenchido só quando o item veio de um SKU de kit — o painel admin usa isso pra
+  // agrupar visualmente os N itens do mesmo kit (evita mandar o mesmo produto 2x achando
+  // que são vendas avulsas distintas).
+  kitSku: string | null; kitNome: string | null
+}
 
 // Um texto de etiqueta/DANFE pode conter mais de um produto (pedido com itens
 // diferentes) — retorna 1 item por SKU identificado, cada um com sua própria
@@ -51,9 +59,9 @@ function itemsFromText(text: string, knownSkus: KnownSku[]): ParsedItem[] {
   const matches = matchSkusMulti(text, knownSkus)
   if (matches.length === 0) {
     const qtd = parseQtd(text)
-    return [{ productId: '', corId: null, qtd: qtd && qtd > 0 ? qtd : 1, matched: false }]
+    return [{ productId: '', corId: null, qtd: qtd && qtd > 0 ? qtd : 1, matched: false, kitSku: null, kitNome: null }]
   }
-  return matches.flatMap(m => {
+  return matches.flatMap((m): ParsedItem[] => {
     const qtd = m.qtd > 0 ? m.qtd : 1
     // Kit: 1 ocorrência no texto vira N itens (um por linha de kit_items), qtd de cada
     // um multiplicada pela qtd de kits lida na etiqueta (normalmente 1 kit por linha).
@@ -63,9 +71,11 @@ function itemsFromText(text: string, knownSkus: KnownSku[]): ParsedItem[] {
         corId: item.corId,
         qtd: qtd * item.quantidade,
         matched: true,
+        kitSku: m.sku.sku,
+        kitNome: m.sku.productNome,
       }))
     }
-    return [{ productId: m.sku.productId, corId: m.sku.corId, qtd, matched: true }]
+    return [{ productId: m.sku.productId, corId: m.sku.corId, qtd, matched: true, kitSku: null, kitNome: null }]
   })
 }
 
@@ -95,7 +105,7 @@ export default function EtiquetasResellerView({ etiquetas, knownSkus, products, 
       const item: QueueItem = {
         localId, file, previewUrl, storagePath: null,
         productId: '', corId: null, qtd: 1, status: 'lendo', matched: false,
-        page: null, totalPages: null, uploadBatchId,
+        page: null, totalPages: null, uploadBatchId, kitSku: null, kitNome: null,
       }
       setQueue(q => [...q, item])
       processFile(localId, file, isPDF)
@@ -120,7 +130,7 @@ export default function EtiquetasResellerView({ etiquetas, knownSkus, products, 
           // mas com seleção manual obrigatória e mensagem que deixa a causa clara.
           updateItem(localId, {
             storagePath: json.path,
-            productId: '', corId: null, qtd: 1, matched: false,
+            productId: '', corId: null, qtd: 1, matched: false, kitSku: null, kitNome: null,
             status: 'pronto', totalPages: 1,
             error: 'Falha ao ler o PDF — selecione o produto manualmente.',
           })
@@ -144,6 +154,8 @@ export default function EtiquetasResellerView({ etiquetas, knownSkus, products, 
               corId: p.corId,
               qtd: p.qtd,
               matched: p.matched,
+              kitSku: p.kitSku,
+              kitNome: p.kitNome,
               status: 'pronto' as const,
               page: idx + 1,
               totalPages,
@@ -171,6 +183,8 @@ export default function EtiquetasResellerView({ etiquetas, knownSkus, products, 
           corId: p.corId,
           qtd: p.qtd,
           matched: p.matched,
+          kitSku: p.kitSku,
+          kitNome: p.kitNome,
           status: 'pronto' as const,
         }))
         return q.flatMap(it => it.localId === localId ? expanded : [it])
@@ -211,6 +225,8 @@ export default function EtiquetasResellerView({ etiquetas, knownSkus, products, 
         cor_id: it.corId,
         qtd: it.qtd,
         upload_batch_id: it.uploadBatchId,
+        kit_sku: it.kitSku,
+        kit_nome: it.kitNome,
       })
     }
     setQueue(q => q.filter(it => !ready.some(r => r.localId === it.localId)))

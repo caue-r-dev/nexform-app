@@ -12,6 +12,8 @@ export type EtiquetaFormData = {
   cor_id: string | null
   qtd: number
   upload_batch_id: string
+  kit_sku: string | null
+  kit_nome: string | null
 }
 
 // Etiqueta enviada por revendedor sempre gera automaticamente uma sale
@@ -87,6 +89,8 @@ export async function createEtiqueta(data: EtiquetaFormData) {
     qtd: data.qtd,
     storage_path: data.storage_path,
     upload_batch_id: data.upload_batch_id,
+    kit_sku: data.kit_sku,
+    kit_nome: data.kit_nome,
   })
 
   if (etiquetaErr) {

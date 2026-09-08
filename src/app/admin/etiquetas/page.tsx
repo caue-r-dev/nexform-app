@@ -7,7 +7,7 @@ export default async function AdminEtiquetasPage() {
   const { data: etiquetas } = await adminClient
     .from('etiquetas')
     .select(`
-      id, sku, product_nome, cor_nome, qtd, upload_batch_id,
+      id, sku, product_nome, cor_nome, qtd, upload_batch_id, kit_sku, kit_nome,
       storage_path, status, data_upload, data_impressao,
       resellers(nome),
       sales(products(imagem))
