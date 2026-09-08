@@ -88,4 +88,23 @@ describe('matchSkusMulti', () => {
     expect(result[0].sku.sku).toBe('1013.00003')
     expect(result[0].qtd).toBe(1)
   })
+
+  it('SKU de kit (mais longo) ganha do SKU de produto+cor mais curto que é seu prefixo', () => {
+    // Texto real (pdf-parse) de etiqueta de kit — SKU impresso "1025.00001.00002" é o SKU do
+    // kit (produto 1025, 1 unidade cor 00001 + 1 unidade cor 00002). Sem o kit na lista de
+    // SKUs conhecidos, o produto+cor "1025.00001" (prefixo do SKU do kit) casava sozinho,
+    // perdendo o segundo item (cor 00002) e o fato de ser um kit.
+    const knownSkusComKit: KnownSku[] = [
+      ...knownSkus,
+      { productId: 'p-porta-oculos', corId: 'c-branco2', sku: '1025.00001', productNome: 'Porta Óculos Expositor', corNome: 'Branco' },
+      { productId: 'kit-1', corId: null, sku: '1025.00001.00002', productNome: 'Kit 2 Porta Óculos Expositor', corNome: null },
+    ]
+    const text = 'IDENTIFICAÇÃO DOS BENS\nNº \nSKU\n \nDESCRIÇÃO\n \nVARIAÇÃO\n \nQTD\n1 1025.00001.\n\t00002\nKit 2 Porta Óculos Expositor\n\tDecorativo Suporte de Mesa\nBranco e\n\tPreto\n1\n08-09-2026\n \nTotal\n \n1'
+
+    const result = matchSkusMulti(text, knownSkusComKit)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].sku.sku).toBe('1025.00001.00002')
+    expect(result[0].qtd).toBe(1)
+  })
 })

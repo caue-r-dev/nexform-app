@@ -53,12 +53,20 @@ function itemsFromText(text: string, knownSkus: KnownSku[]): ParsedItem[] {
     const qtd = parseQtd(text)
     return [{ productId: '', corId: null, qtd: qtd && qtd > 0 ? qtd : 1, matched: false }]
   }
-  return matches.map(m => ({
-    productId: m.sku.productId,
-    corId: m.sku.corId,
-    qtd: m.qtd > 0 ? m.qtd : 1,
-    matched: true,
-  }))
+  return matches.flatMap(m => {
+    const qtd = m.qtd > 0 ? m.qtd : 1
+    // Kit: 1 ocorrência no texto vira N itens (um por linha de kit_items), qtd de cada
+    // um multiplicada pela qtd de kits lida na etiqueta (normalmente 1 kit por linha).
+    if (m.sku.kitItems) {
+      return m.sku.kitItems.map(item => ({
+        productId: item.productId,
+        corId: item.corId,
+        qtd: qtd * item.quantidade,
+        matched: true,
+      }))
+    }
+    return [{ productId: m.sku.productId, corId: m.sku.corId, qtd, matched: true }]
+  })
 }
 
 export default function EtiquetasResellerView({ etiquetas, knownSkus, products, saldoDisponivel }: {

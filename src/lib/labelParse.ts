@@ -4,6 +4,10 @@ export type KnownSku = {
   sku: string
   productNome: string
   corNome: string | null
+  // Presente só pra SKU de kit — casar o SKU do kit não identifica 1 produto, mas N
+  // (cada item do kit, na quantidade cadastrada). productId/corId acima ficam vazios
+  // pro kit em si; quem consome o match expande usando esta lista.
+  kitItems?: { productId: string; corId: string | null; quantidade: number }[]
 }
 
 const QTD_PATTERNS = [

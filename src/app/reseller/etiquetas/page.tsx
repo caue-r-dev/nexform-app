@@ -19,7 +19,7 @@ export default async function ResellerEtiquetasPage() {
     .single()
   if (!reseller) redirect('/login')
 
-  const [{ data: etiquetas }, { data: rawProducts }, saldoDisponivel] = await Promise.all([
+  const [{ data: etiquetas }, { data: rawProducts }, { data: kitRows }, saldoDisponivel] = await Promise.all([
     adminClient
       .from('etiquetas')
       .select('id, sku, product_nome, cor_nome, qtd, storage_path, status, data_upload, data_impressao')
@@ -29,6 +29,12 @@ export default async function ResellerEtiquetasPage() {
       .from('products')
       .select('id, nome, sku, custo_producao, margem_producao, product_cores(cor_id, cores_globais(nome, codigo))')
       .order('nome'),
+    // Kits do admin (visíveis a todo revendedor) + kits montados por este revendedor —
+    // mesmo filtro de visibilidade usado no catálogo/tela "Montar Kit".
+    adminClient
+      .from('kits')
+      .select('id, sku, nome, kit_items(product_id, cor_id, quantidade)')
+      .or(`reseller_id.is.null,reseller_id.eq.${reseller.id}`),
     getSaldoDisponivel(reseller.id),
   ])
 
@@ -52,6 +58,17 @@ export default async function ResellerEtiquetasPage() {
     })
     return [parent, ...children]
   })
+
+  // SKUs de kit — casam como uma unidade só, mas expandem pra N itens (cada linha de
+  // kit_items, na quantidade cadastrada) na hora de montar a fila de confirmação.
+  const kitSkus = (kitRows ?? []).flatMap(k => {
+    const items = (k.kit_items ?? []).map(item => ({
+      productId: item.product_id, corId: item.cor_id, quantidade: item.quantidade,
+    }))
+    if (items.length === 0) return []
+    return [{ productId: '', corId: null, sku: k.sku, productNome: k.nome, corNome: null, kitItems: items }]
+  })
+  knownSkus.push(...kitSkus)
 
   const products = (rawProducts ?? []).map(p => ({
     id: p.id,

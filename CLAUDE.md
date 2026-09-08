@@ -18,7 +18,7 @@ Telas:
 - Kits personalizados (admin): página própria `src/app/admin/kits/page.tsx` + `src/components/admin/kits/KitsView.tsx`. Filtra sempre `reseller_id is null`.
 - Revendedor: seção "Kits disponíveis" em `src/components/reseller/CatalogoResellerView.tsx`, separada da tabela de produtos, coluna "Valor" = `preco_repasse` direto (sem fórmula). Também filtra `reseller_id is null` — só kits do admin aparecem no catálogo geral.
 
-Fora do escopo (pendente, junto com correção de bug já conhecido): reconhecimento de SKU de kit na leitura de etiqueta (OCR).
+Reconhecimento de SKU de kit na leitura de etiqueta (OCR): `knownSkus` em `src/app/reseller/etiquetas/page.tsx` inclui também os kits visíveis ao revendedor (admin + próprios), cada um como um `KnownSku` com campo extra `kitItems` (`src/lib/labelParse.ts`). `matchSkusMulti` já prioriza o SKU mais específico (mais longo) por construção — um SKU de kit (ex. `1025.00001.00002`) vence sozinho o SKU de produto+cor que é seu prefixo (ex. `1025.00001`), sem precisar de lógica nova ali. Quem expande 1 ocorrência de kit em N itens (um por linha de `kit_items`, qtd multiplicada) é `itemsFromText` em `EtiquetasResellerView.tsx`.
 
 ### Extensão — Kits montados pelo revendedor (`supabase/migrations/009_kits_reseller.sql`)
 
