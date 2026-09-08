@@ -5,6 +5,12 @@ import { getSaldoDisponivel } from '@/app/actions/creditos'
 import CreditosResellerView from '@/components/reseller/CreditosResellerView'
 
 export const dynamic = 'force-dynamic'
+// OCR do comprovante (tesseract.js/worker_threads, rodado em enviarComprovante)
+// é pesado — sem folga aqui o timeout padrão da function em produção podia
+// matar a execução no meio, antes do .update() final gravar qualquer
+// resultado (bug real: transação ficava travada em "pendente" pra sempre,
+// invisível pro admin, que só vê/aprova status "revisao").
+export const maxDuration = 60
 
 export default async function ResellerCreditosPage() {
   const supabase = await createClient()

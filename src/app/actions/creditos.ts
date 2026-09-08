@@ -90,74 +90,96 @@ export async function enviarComprovante(transactionId: string, storagePath: stri
   // assim) — bloqueia um path de outro revendedor sendo reaproveitado aqui.
   if (!storagePath.startsWith(`${resellerId}/`)) return { error: 'Comprovante inválido.' }
 
-  const { data: fileBlob, error: downloadError } = await adminClient.storage
-    .from('comprovantes')
-    .download(storagePath)
-  if (downloadError || !fileBlob) return { error: 'Falha ao ler o comprovante enviado.' }
+  // Tudo daqui pra baixo (download, OCR, update final) fica num try/catch
+  // amplo — qualquer falha inesperada (não só erro de OCR/parse já tratado
+  // internamente) precisa terminar gravando um status revisável, nunca
+  // deixar a transação presa em "pendente" pra sempre. Presa em "pendente"
+  // é invisível pro admin: a fila de revisão só lista status "revisao"
+  // (CreditosAdminView.tsx), então "pendente" travado nunca aparece pra
+  // ninguém aprovar/rejeitar — bug real que motivou esse try/catch.
+  try {
+    const { data: fileBlob, error: downloadError } = await adminClient.storage
+      .from('comprovantes')
+      .download(storagePath)
+    if (downloadError || !fileBlob) throw new Error('Falha ao ler o comprovante enviado.')
 
-  const bytes = Buffer.from(await fileBlob.arrayBuffer())
-  const isPDF = storagePath.toLowerCase().endsWith('.pdf')
+    const bytes = Buffer.from(await fileBlob.arrayBuffer())
+    const isPDF = storagePath.toLowerCase().endsWith('.pdf')
 
-  let text = ''
-  if (isPDF) {
-    try {
-      const { PDFParse } = await import('pdf-parse')
-      const parser = new PDFParse({ data: bytes })
-      const result = await parser.getText()
-      text = result.pages[0]?.text ?? ''
-      await parser.destroy()
-    } catch (err) {
-      console.error('pdf-parse falhou (comprovante):', err)
+    let text = ''
+    if (isPDF) {
+      try {
+        const { PDFParse } = await import('pdf-parse')
+        const parser = new PDFParse({ data: bytes })
+        const result = await parser.getText()
+        text = result.pages[0]?.text ?? ''
+        await parser.destroy()
+      } catch (err) {
+        console.error('pdf-parse falhou (comprovante):', err)
+      }
+    } else {
+      try {
+        const path = await import('path')
+        const { createWorker } = await import('tesseract.js')
+        // tesseract.js resolve o worker-script via __dirname, que o bundler
+        // do Next.js (server action) reescreve pra um caminho que não existe
+        // em disco — passa o path real (relativo a process.cwd(), que continua
+        // correto em runtime) explicitamente pra não depender disso.
+        const workerPath = path.join(process.cwd(), 'node_modules/tesseract.js/src/worker-script/node/index.js')
+        const worker = await createWorker('por', 1, { workerPath })
+        const { data } = await worker.recognize(bytes)
+        await worker.terminate()
+        text = data.text
+      } catch (err) {
+        console.error('OCR falhou (comprovante):', err)
+      }
     }
-  } else {
-    try {
-      const path = await import('path')
-      const { createWorker } = await import('tesseract.js')
-      // tesseract.js resolve o worker-script via __dirname, que o bundler
-      // do Next.js (server action) reescreve pra um caminho que não existe
-      // em disco — passa o path real (relativo a process.cwd(), que continua
-      // correto em runtime) explicitamente pra não depender disso.
-      const workerPath = path.join(process.cwd(), 'node_modules/tesseract.js/src/worker-script/node/index.js')
-      const worker = await createWorker('por', 1, { workerPath })
-      const { data } = await worker.recognize(bytes)
-      await worker.terminate()
-      text = data.text
-    } catch (err) {
-      console.error('OCR falhou (comprovante):', err)
-    }
+
+    const valorOcrLido = parseValorPago(text)
+    const valorBate = valorOcrLido != null && Math.abs(valorOcrLido - Number(tx.valor)) < 0.005
+
+    // Rejeita Pix agendado ou comprovante reaproveitado: a data/hora impressa
+    // no comprovante precisa estar a até 30 min de quando o depósito foi
+    // solicitado (não bate quando pago com agendamento pra outro dia/horário,
+    // ou quando é um comprovante velho sendo reenviado). Sem data legível no
+    // comprovante, não bloqueia sozinho — só o valor decide (mesmo padrão de
+    // "não engole erro, mas também não trava por causa de OCR incompleto").
+    const dataComprovante = parseDataHoraPagamento(text)
+    const dataBate = dataComprovante == null || dataHoraDentroDoPrazo(dataComprovante, new Date(tx.criado_em))
+
+    const bate = valorBate && dataBate
+    const status: 'confirmado' | 'revisao' = bate ? 'confirmado' : 'revisao'
+
+    const { error } = await adminClient
+      .from('credit_transactions')
+      .update({
+        storage_path: storagePath,
+        valor_ocr_lido: valorOcrLido,
+        status,
+        confirmado_em: bate ? new Date().toISOString() : null,
+      })
+      .eq('id', transactionId)
+      .eq('status', 'pendente')
+    if (error) return { error: error.message }
+
+    revalidatePath('/reseller/creditos')
+    revalidatePath('/reseller')
+    revalidatePath('/admin/creditos')
+    return { ok: true as const, status }
+  } catch (err) {
+    console.error('enviarComprovante falhou:', err)
+    // Best-effort: manda pra revisão manual em vez de deixar travado em
+    // "pendente" (invisível pro admin). Se esse update também falhar, não
+    // tem mais nada a fazer — mas ao menos tentamos.
+    await adminClient
+      .from('credit_transactions')
+      .update({ storage_path: storagePath, status: 'revisao' })
+      .eq('id', transactionId)
+      .eq('status', 'pendente')
+    revalidatePath('/reseller/creditos')
+    revalidatePath('/admin/creditos')
+    return { ok: true as const, status: 'revisao' as const }
   }
-
-  const valorOcrLido = parseValorPago(text)
-  const valorBate = valorOcrLido != null && Math.abs(valorOcrLido - Number(tx.valor)) < 0.005
-
-  // Rejeita Pix agendado ou comprovante reaproveitado: a data/hora impressa
-  // no comprovante precisa estar a até 30 min de quando o depósito foi
-  // solicitado (não bate quando pago com agendamento pra outro dia/horário,
-  // ou quando é um comprovante velho sendo reenviado). Sem data legível no
-  // comprovante, não bloqueia sozinho — só o valor decide (mesmo padrão de
-  // "não engole erro, mas também não trava por causa de OCR incompleto").
-  const dataComprovante = parseDataHoraPagamento(text)
-  const dataBate = dataComprovante == null || dataHoraDentroDoPrazo(dataComprovante, new Date(tx.criado_em))
-
-  const bate = valorBate && dataBate
-  const status: 'confirmado' | 'revisao' = bate ? 'confirmado' : 'revisao'
-
-  const { error } = await adminClient
-    .from('credit_transactions')
-    .update({
-      storage_path: storagePath,
-      valor_ocr_lido: valorOcrLido,
-      status,
-      confirmado_em: bate ? new Date().toISOString() : null,
-    })
-    .eq('id', transactionId)
-    .eq('status', 'pendente')
-  if (error) return { error: error.message }
-
-  revalidatePath('/reseller/creditos')
-  revalidatePath('/reseller')
-  revalidatePath('/admin/creditos')
-  return { ok: true as const, status }
 }
 
 export async function aprovarDeposito(id: string) {
