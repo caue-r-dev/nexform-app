@@ -189,6 +189,7 @@ export async function lancarRecargaManual(resellerId: string, valor: number, obs
   if (!(await currentIsAdmin())) return { error: 'Acesso negado.' }
   if (!resellerId) return { error: 'Selecione um revendedor.' }
   if (!valor || !Number.isFinite(valor) || valor <= 0) return { error: 'Valor inválido.' }
+  if (valor > 100000) return { error: 'Valor muito alto — confirme o valor antes de lançar.' }
   valor = Math.round(valor * 100) / 100
 
   const { error } = await adminClient.from('credit_transactions').insert({

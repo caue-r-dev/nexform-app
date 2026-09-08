@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { aprovarDeposito, rejeitarDeposito, lancarRecargaManual } from '@/app/actions/creditos'
 import { downloadCSV } from '@/lib/downloadCSV'
+import { parseBRNumber } from '@/lib/parseBRNumber'
 
 type Transacao = {
   id: string
@@ -89,7 +90,10 @@ export default function CreditosAdminView({ transacoes, resellers }: { transacoe
   }
 
   async function handleLancarRecarga() {
-    const valor = Number(recargaValor.replace(',', '.'))
+    const valor = parseBRNumber(recargaValor)
+    if (!Number.isFinite(valor) || valor <= 0) { alert('Valor inválido.'); return }
+    const nome = resellers.find(r => r.id === recargaResellerId)?.nome ?? 'revendedor selecionado'
+    if (!confirm(`Lançar ${fmtBRL(valor)} de crédito confirmado para ${nome}? Essa ação não pode ser desfeita pelo sistema.`)) return
     setRecargaBusy(true)
     const res = await lancarRecargaManual(recargaResellerId, valor, recargaObs)
     setRecargaBusy(false)
